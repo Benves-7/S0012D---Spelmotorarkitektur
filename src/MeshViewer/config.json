@@ -1,0 +1,32 @@
+{
+"graphicsEntities":[
+    {
+        "name":"tiger",
+        "path": "root:tiger.omsh.txt",
+        "shader": "phong",
+        "material":{
+            "diffuse": [0.0, 0.24, 0.64, 1.0],
+            "specular": [1.0, 1.0, 1.0, 1.0],
+            "specularPower": 32.0
+        }
+    },
+    {    "name":"opelblitz",
+        "path": "root:opelblitz.omsh.txt",
+        "shader": "phong",
+        "material":{
+            "diffuse": [0.0, 0.24, 0.64, 1.0],
+            "specular": [1.0, 1.0, 1.0, 1.0],
+            "specularPower": 32.0
+        }
+    },
+    {    "name": "teapot",
+        "path": "root:teapot.omsh.txt",
+        "shader": "phong",
+        "material":{
+            "diffuse": [0.0, 0.24, 0.64, 1.0],
+            "specular": [1.0, 1.0, 1.0, 1.0],
+            "specularPower": 32.0
+        }
+    }
+    ]
+}
