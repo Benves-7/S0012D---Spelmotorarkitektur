@@ -1,6 +1,6 @@
-//-----------------------------------------------------------------------------
-//  MeshViewer.cc
-//-----------------------------------------------------------------------------
+///-----------------------------------------------------------------------------
+///  MeshViewer.cc
+///-----------------------------------------------------------------------------
 #include "Pre.h"
 #include "Core/Main.h"
 #include "Core/String/StringBuilder.h"
@@ -8,7 +8,7 @@
 #include "IO/IO.h"
 #include "IMUI/IMUI.h"
 #include "Input/Input.h"
-#include "HttpFS/HTTPFileSystem.h"
+#include "LocalFS/LocalFileSystem.h"
 #include "Assets/Gfx/MeshLoader.h"
 #include "glm/mat4x4.hpp"
 #include "glm/gtc/matrix_transform.hpp"
@@ -16,12 +16,34 @@
 #include "shaders.h"
 
 using namespace Oryol;
+struct ModelContainer {
+    Id id;
+    glm::mat4 transform;
+    glm::vec4 position;
+    DrawState drawState;
+    int numMaterials;
+    enum {
+        Normals = 0,
+        Lambert,
+        Phong
+    };
+
+    struct Material {
+        int shaderIndex = Phong;
+        Id pipeline;
+        glm::vec4 diffuse   = glm::vec4(0.0f, 0.24f, 0.64f, 1.0f);
+        glm::vec4 specular  = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+    } material;
+};
 
 class MeshViewerApp : public App {
 public:
     AppState::Code OnInit();
     AppState::Code OnRunning();
     AppState::Code OnCleanup();
+    static Array<ModelContainer> models;
+
+    static int createObject(const char* path, glm::vec4 position);
 
 private:
     void handleInput();
@@ -33,6 +55,9 @@ private:
     void applyVariables(int materialIndex);
 
     int frameCount = 0;
+
+
+
     ResourceLabel curMeshLabel;
     MeshSetup curMeshSetup;
     Id mesh;
@@ -41,21 +66,32 @@ private:
     glm::mat4 proj;
     glm::mat4 model;
     glm::mat4 modelViewProj;
-    glm::vec4 position;
+
+    glm::vec4 position;          /// REMOVE???
 
     int curMeshIndex = 0;
+
     static const int numMeshes = 3;
+    struct Mesh {
+        ResourceLabel meshLabel;
+        MeshSetup meshSetup;
+        Id mesh;
+    } meshes[numMeshes];
     static const char* meshNames[numMeshes];
     static const char* meshPaths[numMeshes];
+
     static const int numShaders = 3;
     static const char* shaderNames[numShaders];
+
     enum {
         Normals = 0,
         Lambert,
         Phong
     };
+
     Id shaders[numShaders];
     ResourceLabel curMaterialLabel;
+
     int numMaterials = 0;
     struct Material {
         int shaderIndex = Phong;
@@ -73,7 +109,7 @@ private:
         glm::vec2 startOrbital;
         float startDistance = 0.0f;
     } camera;
-    bool camAutoOrbit = true;
+    bool camAutoOrbit = false;
     struct CameraSetting cameraSettings[numMeshes];
 
     glm::vec2 lightOrbital = glm::vec2(glm::radians(25.0f), 0.0f);
@@ -91,7 +127,20 @@ private:
     const float maxLatitude = 85.0f;
     const float minCamHeight = -2.0f;
     const float maxCamHeight = 5.0f;
+
+    struct Model {                                  /// CHECK IF NEEDED.
+        Id id;
+        glm::mat4 model;
+        glm::mat4 view;
+        glm::mat4 projection;
+        glm::mat4 mlp;
+
+        Material material;
+        StringBuilder filePath = "";
+    };
 };
+
+Array<ModelContainer> MeshViewerApp::models;        /// CHECK IF NEEDED.
 OryolMain(MeshViewerApp);
 
 const char* MeshViewerApp::meshNames[numMeshes] = {
@@ -100,9 +149,9 @@ const char* MeshViewerApp::meshNames[numMeshes] = {
     "Teapot"
 };
 const char* MeshViewerApp::meshPaths[numMeshes] = {
-    "msh:tiger.omsh.txt",
-    "msh:opelblitz.omsh.txt",
-    "msh:teapot.omsh.txt"
+    "root:tiger.omsh.txt",
+    "root:opelblitz.omsh.txt",
+    "root:teapot.omsh.txt"
 };
 
 const char* MeshViewerApp::shaderNames[numShaders] = {
@@ -111,14 +160,13 @@ const char* MeshViewerApp::shaderNames[numShaders] = {
     "Phong"
 };
 
-//-----------------------------------------------------------------------------
+///-----------------------------------------------------------------------------
 AppState::Code
 MeshViewerApp::OnInit() {
 
     // setup IO system
     IOSetup ioSetup;
-    ioSetup.FileSystems.Add("http", HTTPFileSystem::Creator());
-    ioSetup.Assigns.Add("msh:", ORYOL_SAMPLE_URL);
+    ioSetup.FileSystems.Add("file", LocalFileSystem::Creator());
     IO::Setup(ioSetup);
 
     // setup rendering and input system
@@ -171,6 +219,7 @@ MeshViewerApp::OnInit() {
     this->shaders[Lambert] = Gfx::CreateResource(LambertShader::Setup());
     this->shaders[Phong]   = Gfx::CreateResource(PhongShader::Setup());
     this->loadMesh(this->meshPaths[this->curMeshIndex]);
+    this->createObject(this->meshPaths[this->curMeshIndex], glm::vec4(0,0,0,0));
 
     // setup projection and view matrices
     const float fbWidth = (const float) Gfx::DisplayAttrs().FramebufferWidth;
@@ -185,7 +234,7 @@ MeshViewerApp::OnInit() {
     return App::OnInit();
 }
 
-//-----------------------------------------------------------------------------
+///-----------------------------------------------------------------------------
 AppState::Code
 MeshViewerApp::OnRunning() {
 
@@ -210,7 +259,7 @@ MeshViewerApp::OnRunning() {
     return Gfx::QuitRequested() ? AppState::Cleanup : AppState::Running;
 }
 
-//-----------------------------------------------------------------------------
+///-----------------------------------------------------------------------------
 AppState::Code
 MeshViewerApp::OnCleanup() {
     IMUI::Discard();
@@ -220,7 +269,7 @@ MeshViewerApp::OnCleanup() {
     return App::OnCleanup();
 }
 
-//-----------------------------------------------------------------------------
+///-----------------------------------------------------------------------------
 void
 MeshViewerApp::handleInput() {
 
@@ -259,7 +308,7 @@ MeshViewerApp::handleInput() {
     }
 }
 
-//------------------------------------------------------------------------------
+///------------------------------------------------------------------------------
 void
 MeshViewerApp::updateCamera() {
     if (this->camAutoOrbit) {
@@ -274,7 +323,7 @@ MeshViewerApp::updateCamera() {
     this->modelViewProj = this->proj * this->view;
 }
 
-//-----------------------------------------------------------------------------
+///-----------------------------------------------------------------------------
 void
 MeshViewerApp::updateLight() {
     if (this->lightAutoOrbit) {
@@ -286,7 +335,7 @@ MeshViewerApp::updateLight() {
     this->lightDir = glm::euclidean(this->lightOrbital);
 }
 
-//-----------------------------------------------------------------------------
+///-----------------------------------------------------------------------------
 void
 MeshViewerApp::drawUI() {
     const char* state;
@@ -345,25 +394,6 @@ MeshViewerApp::drawUI() {
         ImGui::SliderFloat("Y##value", &this->position.y, -50.f, 50.f);
         ImGui::SliderFloat("Z##value", &this->position.z, -50.f, 50.f);
     }
-    if (ImGui::CollapsingHeader("Model"))
-    {
-        ImGui::SliderFloat("X1##value", &this->model[0][0], -10.f, 10.f);
-        ImGui::SliderFloat("Y1##value", &this->model[0][1], -10.f, 10.f);
-        ImGui::SliderFloat("Z1##value", &this->model[0][2], -10.f, 10.f);
-        ImGui::SliderFloat("W1##value", &this->model[0][3], -10.f, 10.f);
-        ImGui::SliderFloat("X1##value", &this->model[1][0], -10.f, 10.f);
-        ImGui::SliderFloat("Y1##value", &this->model[1][1], -10.f, 10.f);
-        ImGui::SliderFloat("Z1##value", &this->model[1][2], -10.f, 10.f);
-        ImGui::SliderFloat("W1##value", &this->model[1][3], -10.f, 10.f);
-        ImGui::SliderFloat("X1##value", &this->model[2][0], -10.f, 10.f);
-        ImGui::SliderFloat("Y1##value", &this->model[2][1], -10.f, 10.f);
-        ImGui::SliderFloat("Z1##value", &this->model[2][2], -10.f, 10.f);
-        ImGui::SliderFloat("W1##value", &this->model[2][3], -10.f, 10.f);
-        ImGui::SliderFloat("X1##value", &this->model[3][0], -10.f, 10.f);
-        ImGui::SliderFloat("Y1##value", &this->model[3][1], -10.f, 10.f);
-        ImGui::SliderFloat("Z1##value", &this->model[3][2], -10.f, 10.f);
-        ImGui::SliderFloat("W1##value", &this->model[3][3], -10.f, 10.f);
-    }
     for (int i = 0; i < this->numMaterials; i++) {
         this->strBuilder.Format(32, "Material %d", i);
         if (ImGui::CollapsingHeader(this->strBuilder.AsCStr())) {
@@ -387,7 +417,7 @@ MeshViewerApp::drawUI() {
     ImGui::End();
 }
 
-//-----------------------------------------------------------------------------
+///-----------------------------------------------------------------------------
 void
 MeshViewerApp::createMaterials() {
     o_assert_dbg(this->mesh.IsValid());
@@ -407,12 +437,13 @@ MeshViewerApp::createMaterials() {
     Gfx::PopResourceLabel();
 }
 
-//-----------------------------------------------------------------------------
+///-----------------------------------------------------------------------------
 void
-MeshViewerApp::loadMesh(const char* path) {
-
+MeshViewerApp::loadMesh(const char* path)
+{
     // unload current mesh
-    if (this->curMeshLabel.IsValid()) {
+    if (this->curMeshLabel.IsValid())
+    {
         Gfx::DestroyResources(this->curMeshLabel);
         this->curMeshSetup = MeshSetup();
     }
@@ -421,15 +452,35 @@ MeshViewerApp::loadMesh(const char* path) {
     // object of the loaded mesh
     this->numMaterials = 0;
     this->curMeshLabel = Gfx::PushResourceLabel();
-    this->mesh = Gfx::LoadResource(MeshLoader::Create(MeshSetup::FromFile(path), [this](MeshSetup& setup) {
+    this->mesh = Gfx::LoadResource(MeshLoader::Create(MeshSetup::FromFile(path), [this](MeshSetup& setup)
+    {
         this->curMeshSetup = setup;
         this->numMaterials = setup.NumPrimitiveGroups();
         this->createMaterials();
     }));
     Gfx::PopResourceLabel();
 }
+///-----------------------------------------------------------------------------
+int
+MeshViewerApp::createObject(const char* path, glm::vec4 position)
+{
+    ModelContainer temp = MeshViewerApp::models.Add(ModelContainer());
+    temp.position = position;
 
-//-----------------------------------------------------------------------------
+    temp.drawState.Mesh[0] = Gfx::LoadResource(MeshLoader::Create(MeshSetup::FromFile(path), [&temp](MeshSetup& setup)
+    {
+        auto ps = PipelineSetup::FromLayoutAndShader(setup.Layout, Gfx::CreateResource(PhongShader::Setup()));
+        ps.DepthStencilState.DepthWriteEnabled = true;
+        ps.DepthStencilState.DepthCmpFunc = CompareFunc::LessEqual;
+        ps.RasterizerState.CullFaceEnabled = true;
+        ps.RasterizerState.SampleCount = 4;
+        temp.numMaterials = setup.NumPrimitiveGroups();
+        temp.drawState.Pipeline = Gfx::CreateResource(ps);
+    }));
+    return MeshViewerApp::models.Size() - 1;
+
+}
+///-----------------------------------------------------------------------------
 void
 MeshViewerApp::applyVariables(int matIndex) {
     switch (this->materials[matIndex].shaderIndex) {
