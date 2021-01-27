@@ -1,7 +1,6 @@
-///-----------------------------------------------------------------------------
-///  MeshViewer.cc
-///-----------------------------------------------------------------------------
-
+//-----------------------------------------------------------------------------
+//  MeshViewer.cc
+//-----------------------------------------------------------------------------
 #include "Pre.h"
 #include "Core/Main.h"
 #include "Core/String/StringBuilder.h"
@@ -9,170 +8,14 @@
 #include "IO/IO.h"
 #include "IMUI/IMUI.h"
 #include "Input/Input.h"
-#include "LocalFS/LocalFileSystem.h"
+#include "HttpFS/HTTPFileSystem.h"
 #include "Assets/Gfx/MeshLoader.h"
 #include "glm/mat4x4.hpp"
-#include "glm/gtx/transform.hpp"
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/gtx/polar_coordinates.hpp"
 #include "shaders.h"
 
 using namespace Oryol;
-class Light {
-public:
-    glm::vec2 lightOrbital = glm::vec2(glm::radians(25.0f), 0.0f);
-    glm::vec3 lightDir;
-    glm::vec4 lightColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-    float lightIntensity = 1.0f;
-    bool lightAutoOrbit = false;
-};
-class Model {
-public:
-    void loadMesh(const char* path)
-    {
-        // unload current mesh
-        if (this->curMeshLabel.IsValid()) {
-            Gfx::DestroyResources(this->curMeshLabel);
-            this->curMeshSetup = MeshSetup();
-        }
-
-        // load new mesh, use 'onloaded' callback to capture the mesh setup
-        // object of the loaded mesh
-        this->numMaterials = 0;
-        this->curMeshLabel = Gfx::PushResourceLabel();
-        this->mesh = Gfx::LoadResource(MeshLoader::Create(MeshSetup::FromFile(path), [this](MeshSetup& setup) {
-            this->curMeshSetup = setup;
-            this->numMaterials = setup.NumPrimitiveGroups();
-            this->createMaterials();
-        }));
-        Gfx::PopResourceLabel();
-    }
-    void createMaterials()
-    {
-        o_assert_dbg(this->mesh.IsValid());
-        if (this->curMaterialLabel.IsValid()) {
-            Gfx::DestroyResources(this->curMaterialLabel);
-        }
-
-        this->curMaterialLabel = Gfx::PushResourceLabel();
-        for (int i = 0; i < this->numMaterials; i++) {
-            auto ps = PipelineSetup::FromLayoutAndShader(this->curMeshSetup.Layout, this->shaders[this->materials[i].shaderIndex]);
-            ps.DepthStencilState.DepthWriteEnabled = true;
-            ps.DepthStencilState.DepthCmpFunc = CompareFunc::LessEqual;
-            ps.RasterizerState.CullFaceEnabled = true;
-            ps.RasterizerState.SampleCount = 4;
-            this->materials[i].pipeline = Gfx::CreateResource(ps);
-        }
-        Gfx::PopResourceLabel();
-    }
-    void applyVariables(int materialIndex)
-    {
-        switch (this->materials[materialIndex].shaderIndex) {
-            case Normals:
-                // Normals shader
-            {
-                NormalsShader::vsParams vsParams;
-                vsParams.mvp = this->modelViewProj;
-                Gfx::ApplyUniformBlock(vsParams);
-            }
-                break;
-            case Lambert:
-                // Lambert shader
-            {
-                LambertShader::vsParams vsParams;
-                vsParams.mvp = this->modelViewProj;
-                vsParams.model = this->model;
-                Gfx::ApplyUniformBlock(vsParams);
-
-                LambertShader::fsParams fsParams;
-                fsParams.lightColor = this->light->lightColor * this->light->lightIntensity;
-                fsParams.lightDir = this->light->lightDir;
-                fsParams.matDiffuse = this->materials[materialIndex].diffuse;
-                fsParams.gammaCorrect = this->gammaCorrect ? 1.0f : 0.0f;
-                Gfx::ApplyUniformBlock(fsParams);
-            }
-                break;
-            case Phong:
-                // Phong shader
-            {
-                PhongShader::vsParams vsParams;
-                vsParams.mvp = this->modelViewProj;
-                vsParams.pos = this->position;
-                vsParams.model = this->model;
-                Gfx::ApplyUniformBlock(vsParams);
-
-                 PhongShader::fsParams fsParams;
-                fsParams.eyePos = this->eyePos;
-                fsParams.lightColor = this->light->lightColor * this->light->lightIntensity;
-                fsParams.lightDir = this->light->lightDir;
-                fsParams.matDiffuse = this->materials[materialIndex].diffuse;
-                fsParams.matSpecular = this->materials[materialIndex].specular;
-                fsParams.matSpecularPower = this->materials[materialIndex].specPower;
-                fsParams.gammaCorrect = this->gammaCorrect ? 1.0f : 0.0f;
-                Gfx::ApplyUniformBlock(fsParams);
-            }
-                break;
-
-            default:
-                o_error("Unknown shader index, FIXME!");
-                break;
-        }
-    }
-
-    void setLight(Light* l)
-    {
-        this->light = l;
-    };
-    void setGammaCorrect(bool b)
-    {
-        this->gammaCorrect = b;
-    };
-
-    void setup(int i, const char* path)
-    {
-        this->shaders[Normals] = Gfx::CreateResource(NormalsShader::Setup());
-        this->shaders[Lambert] = Gfx::CreateResource(LambertShader::Setup());
-        this->shaders[Phong]   = Gfx::CreateResource(PhongShader::Setup());
-        this->loadMesh(path);
-        this->position = glm::vec4(0,0,0,1);
-    }
-
-    int curMeshIndex = 0;
-
-    ResourceLabel curMeshLabel;
-    MeshSetup curMeshSetup;
-    ResourceLabel curMaterialLabel;
-    Id mesh;
-
-    glm::vec3 eyePos;
-    glm::mat4 model;
-    glm::mat4 modelViewProj;
-    glm::vec4 position;
-
-    bool gammaCorrect = true;
-
-    Light* light;
-
-    DrawState drawState;
-    int numMaterials = 0;
-
-    static const int numShaders = 3;
-    Id shaders[numShaders];
-
-    enum {
-        Normals = 0,
-        Lambert,
-        Phong
-    };
-
-    struct Material {
-        int shaderIndex = Phong;
-        Id pipeline;
-        glm::vec4 diffuse = glm::vec4(0.0f,0.24f,0.64f,1.0f);
-        glm::vec4 specular = glm::vec4(1.0f,1.0f,1.0f,1.0f);
-        float specPower = 32.0f;
-    } materials[GfxConfig::MaxNumPrimGroups];
-};
 
 class MeshViewerApp : public App {
 public:
@@ -180,20 +23,14 @@ public:
     AppState::Code OnRunning();
     AppState::Code OnCleanup();
 
-    Oryol::Array<Model> models;
-
 private:
-
     void handleInput();
     void updateCamera();
     void updateLight();
     void drawUI();
-
-    //void createMaterials();
+    void createMaterials();
     void loadMesh(const char* path);
-    //void applyVariables(int materialIndex);
-
-    //int  createObject(glm::mat4 transform);
+    void applyVariables(int materialIndex);
 
     int frameCount = 0;
     ResourceLabel curMeshLabel;
@@ -202,8 +39,9 @@ private:
     glm::vec3 eyePos;
     glm::mat4 view;
     glm::mat4 proj;
-    //glm::mat4 model;
+    glm::mat4 model;
     glm::mat4 modelViewProj;
+    glm::vec4 position;
 
     int curMeshIndex = 0;
     static const int numMeshes = 3;
@@ -211,22 +49,21 @@ private:
     static const char* meshPaths[numMeshes];
     static const int numShaders = 3;
     static const char* shaderNames[numShaders];
-//    enum {
-//        Normals = 0,
-//        Lambert,
-//        Phong
-//    };
-//    Id shaders[numShaders];
-//    ResourceLabel curMaterialLabel;
-//    int numMaterials = 0;
-//    struct Material {
-//        int shaderIndex = Phong;
-//        Id pipeline;
-//        glm::vec4 diffuse = glm::vec4(0.0f, 0.24f, 0.64f, 1.0f);
-//        glm::vec4 specular = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-//        float specPower = 32.0f;
-//    } materials[GfxConfig::MaxNumPrimGroups];
-
+    enum {
+        Normals = 0,
+        Lambert,
+        Phong
+    };
+    Id shaders[numShaders];
+    ResourceLabel curMaterialLabel;
+    int numMaterials = 0;
+    struct Material {
+        int shaderIndex = Phong;
+        Id pipeline;
+        glm::vec4 diffuse = glm::vec4(0.0f, 0.24f, 0.64f, 1.0f);
+        glm::vec4 specular = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+        float specPower = 32.0f;
+    } materials[GfxConfig::MaxNumPrimGroups];
     bool gammaCorrect = true;
 
     struct CameraSetting {
@@ -236,17 +73,14 @@ private:
         glm::vec2 startOrbital;
         float startDistance = 0.0f;
     } camera;
-
     bool camAutoOrbit = true;
     struct CameraSetting cameraSettings[numMeshes];
 
-    Light* light = new Light();
-
-//    glm::vec2 lightOrbital = glm::vec2(glm::radians(25.0f), 0.0f);
-//    glm::vec3 lightDir;
-//    glm::vec4 lightColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-//    float lightIntensity = 1.0f;
-//    bool lightAutoOrbit = false;
+    glm::vec2 lightOrbital = glm::vec2(glm::radians(25.0f), 0.0f);
+    glm::vec3 lightDir;
+    glm::vec4 lightColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+    float lightIntensity = 1.0f;
+    bool lightAutoOrbit = false;
     bool dragging = false;
 
     StringBuilder strBuilder;
@@ -258,38 +92,37 @@ private:
     const float minCamHeight = -2.0f;
     const float maxCamHeight = 5.0f;
 };
-
 OryolMain(MeshViewerApp);
 
 const char* MeshViewerApp::meshNames[numMeshes] = {
-        "Tiger",
-        "Blitz",
-        "Teapot"
+    "Tiger",
+    "Blitz",
+    "Teapot"
 };
 const char* MeshViewerApp::meshPaths[numMeshes] = {
-        "root:tiger.omsh.txt",
-        "root:opelblitz.omsh.txt",
-        "root:teapot.omsh.txt"
+    "msh:tiger.omsh.txt",
+    "msh:opelblitz.omsh.txt",
+    "msh:teapot.omsh.txt"
 };
 
 const char* MeshViewerApp::shaderNames[numShaders] = {
-        "Normals",
-        "Lambert",
-        "Phong"
+    "Normals",
+    "Lambert",
+    "Phong"
 };
 
-
-///-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
 AppState::Code
 MeshViewerApp::OnInit() {
+
     // setup IO system
     IOSetup ioSetup;
-    ioSetup.FileSystems.Add("file", LocalFileSystem::Creator());
-    //ioSetup.Assigns.Add("msh:", ORYOL_SAMPLE_URL);
+    ioSetup.FileSystems.Add("http", HTTPFileSystem::Creator());
+    ioSetup.Assigns.Add("msh:", ORYOL_SAMPLE_URL);
     IO::Setup(ioSetup);
 
     // setup rendering and input system
-    auto gfxSetup = GfxSetup::WindowMSAA4(800, 512, "Sipax Mesh Viewer");
+    auto gfxSetup = GfxSetup::WindowMSAA4(800, 512, "Oryol Mesh Viewer");
     gfxSetup.HighDPI = true;
     gfxSetup.DefaultPassAction = PassAction::Clear(glm::vec4(0.5f, 0.5f, 0.5f, 1.0f));
     gfxSetup.HtmlTrackElementSize = true;
@@ -320,7 +153,6 @@ MeshViewerApp::OnInit() {
     style.TouchExtraPadding.x = 5.0f;
     style.TouchExtraPadding.y = 5.0f;
     ImVec4 defaultBlue(0.0f, 0.5f, 1.0f, 0.7f);
-    ImVec4 defaultRed(1.0f, 0.2f, 0.0f, 0.7f);
     style.Colors[ImGuiCol_TitleBg] = defaultBlue;
     style.Colors[ImGuiCol_TitleBgCollapsed] = defaultBlue;
     style.Colors[ImGuiCol_SliderGrab] = defaultBlue;
@@ -331,11 +163,13 @@ MeshViewerApp::OnInit() {
     style.Colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.0f, 0.5f, 1.0f, 0.5f);
     style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.0f, 0.5f, 1.0f, 1.0f);
     style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.0f, 0.5f, 1.0f, 0.3f);
-    style.Colors[ImGuiCol_Header] = defaultRed;
+    style.Colors[ImGuiCol_Header] = defaultBlue;
     style.Colors[ImGuiCol_HeaderHovered] = defaultBlue;
     style.Colors[ImGuiCol_HeaderActive] = defaultBlue;
 
-    /// CHANGE TO OWN FUNCTION?
+    this->shaders[Normals] = Gfx::CreateResource(NormalsShader::Setup());
+    this->shaders[Lambert] = Gfx::CreateResource(LambertShader::Setup());
+    this->shaders[Phong]   = Gfx::CreateResource(PhongShader::Setup());
     this->loadMesh(this->meshPaths[this->curMeshIndex]);
 
     // setup projection and view matrices
@@ -351,7 +185,7 @@ MeshViewerApp::OnInit() {
     return App::OnInit();
 }
 
-///-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
 AppState::Code
 MeshViewerApp::OnRunning() {
 
@@ -362,26 +196,21 @@ MeshViewerApp::OnRunning() {
 
     Gfx::BeginPass();
     this->drawUI();
-
-    /// TODO: CHANGE!
-    for (int k = 0; k < this->models.Size(); ++k) {
-        DrawState drawState;
-        drawState.Mesh[0] = this->models[k].mesh;
-        for (int i = 0; i < this->models[k].numMaterials; i++) {
-            drawState.Pipeline = this->models[k].materials[i].pipeline;
-            Gfx::ApplyDrawState(drawState);
-            this->models[k].applyVariables(i);
-            Gfx::Draw(i);
-        }
+    DrawState drawState;
+    drawState.Mesh[0] = this->mesh;
+    for (int i = 0; i < this->numMaterials; i++) {
+        drawState.Pipeline = this->materials[i].pipeline;
+        Gfx::ApplyDrawState(drawState);
+        this->applyVariables(i);
+        Gfx::Draw(i);
     }
-
     ImGui::Render();
     Gfx::EndPass();
     Gfx::CommitFrame();
     return Gfx::QuitRequested() ? AppState::Cleanup : AppState::Running;
 }
 
-///-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
 AppState::Code
 MeshViewerApp::OnCleanup() {
     IMUI::Discard();
@@ -391,7 +220,7 @@ MeshViewerApp::OnCleanup() {
     return App::OnCleanup();
 }
 
-///-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
 void
 MeshViewerApp::handleInput() {
 
@@ -421,16 +250,16 @@ MeshViewerApp::handleInput() {
             if (Input::MouseButtonPressed(MouseButton::Left)) {
                 this->camera.orbital.y -= Input::MouseMovement().x * 0.01f;
                 this->camera.orbital.x = glm::clamp(
-                        this->camera.orbital.x + Input::MouseMovement().y * 0.01f,
-                        glm::radians(minLatitude),
-                        glm::radians(maxLatitude));
+                    this->camera.orbital.x + Input::MouseMovement().y * 0.01f,
+                    glm::radians(minLatitude),
+                    glm::radians(maxLatitude));
             }
         }
         this->camera.dist = glm::clamp(this->camera.dist + Input::MouseScroll().y * 0.1f, minCamDist, maxCamDist);
     }
 }
 
-///------------------------------------------------------------------------------
+//------------------------------------------------------------------------------
 void
 MeshViewerApp::updateCamera() {
     if (this->camAutoOrbit) {
@@ -441,38 +270,27 @@ MeshViewerApp::updateCamera() {
     }
     this->eyePos = glm::euclidean(this->camera.orbital) * this->camera.dist;
     glm::vec3 poi  = glm::vec3(0.0f, this->camera.height, 0.0f);
-
     this->view = glm::lookAt(this->eyePos + poi, poi, glm::vec3(0.0f, 1.0f, 0.0f));
-    for (int i = 0; i < this->models.Size(); ++i)
-    {
-        this->models[i].eyePos = this->eyePos;
-        this->models[i].modelViewProj = this->proj * this->view;
-    }
+    this->modelViewProj = this->proj * this->view;
 }
 
-///-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
 void
 MeshViewerApp::updateLight() {
-    if (this->light->lightAutoOrbit) {
-        this->light->lightOrbital.y += 0.01f;
-        if (this->light->lightOrbital.y > glm::radians(360.0f)) {
-            this->light->lightOrbital.y = 0.0f;
+    if (this->lightAutoOrbit) {
+        this->lightOrbital.y += 0.01f;
+        if (this->lightOrbital.y > glm::radians(360.0f)) {
+            this->lightOrbital.y = 0.0f;
         }
     }
-    this->light->lightDir = glm::euclidean(this->light->lightOrbital);
-    for (int i = 0; i < this->models.Size(); ++i) {
-        this->models[i].light = light;
-    }
+    this->lightDir = glm::euclidean(this->lightOrbital);
 }
 
-///-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
 void
 MeshViewerApp::drawUI() {
-
-    /// TODO: Changes to UI is needed.
-    /// TODO: Add control for several models.
     const char* state;
-    switch (Gfx::QueryResourceInfo(this->models[0].mesh).State) {
+    switch (Gfx::QueryResourceInfo(this->mesh).State) {
         case ResourceState::Valid: state = "Loaded"; break;
         case ResourceState::Failed: state = "Load Failed"; break;
         case ResourceState::Pending: state = "Loading..."; break;
@@ -485,8 +303,7 @@ MeshViewerApp::drawUI() {
     ImGui::PushItemWidth(130.0f);
     if (ImGui::Combo("##mesh", (int*) &this->curMeshIndex, this->meshNames, numMeshes)) {
         this->camera = this->cameraSettings[this->curMeshIndex];
-        /// TODO: this needs to work.
-        //this->loadMesh(this->meshPaths[this->curMeshIndex]);
+        this->loadMesh(this->meshPaths[this->curMeshIndex]);
     }
     ImGui::Text("state: %s\n", state);
     if (this->curMeshSetup.NumPrimitiveGroups() > 0) {
@@ -509,43 +326,60 @@ MeshViewerApp::drawUI() {
         }
     }
     if (ImGui::CollapsingHeader("Light")) {
-        ImGui::SliderAngle("Long##light", &this->light->lightOrbital.y, 0.0f, 360.0f);
-        ImGui::SliderAngle("Lat##light", &this->light->lightOrbital.x, minLatitude, maxLatitude);
-        ImGui::ColorEdit3("Color##light", &this->light->lightColor.x);
-        ImGui::SliderFloat("Intensity##light", &this->light->lightIntensity, 0.0f, 5.0f);
-        ImGui::Checkbox("Auto Orbit##light", &this->light->lightAutoOrbit);
+        ImGui::SliderAngle("Long##light", &this->lightOrbital.y, 0.0f, 360.0f);
+        ImGui::SliderAngle("Lat##light", &this->lightOrbital.x, minLatitude, maxLatitude);
+        ImGui::ColorEdit3("Color##light", &this->lightColor.x);
+        ImGui::SliderFloat("Intensity##light", &this->lightIntensity, 0.0f, 5.0f);
+        ImGui::Checkbox("Auto Orbit##light", &this->lightAutoOrbit);
         ImGui::Checkbox("Gamma Correct##light", &this->gammaCorrect);
         if (ImGui::Button("Reset##light")) {
-            this->light->lightOrbital = glm::vec2(glm::radians(25.0f), 0.0f);
-            this->light->lightColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-            this->light->lightIntensity = 1.0f;
-            this->light->lightAutoOrbit = false;
+            this->lightOrbital = glm::vec2(glm::radians(25.0f), 0.0f);
+            this->lightColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+            this->lightIntensity = 1.0f;
+            this->lightAutoOrbit = false;
         }
     }
     if (ImGui::CollapsingHeader("Position"))
     {
-        ImGui::SliderFloat("X##value", &this->models[0].position.x, -50.f, 50.f);
-        ImGui::SliderFloat("Y##value", &this->models[0].position.y, -50.f, 50.f);
-        ImGui::SliderFloat("Z##value", &this->models[0].position.z, -50.f, 50.f);
+        ImGui::SliderFloat("X##value", &this->position.x, -50.f, 50.f);
+        ImGui::SliderFloat("Y##value", &this->position.y, -50.f, 50.f);
+        ImGui::SliderFloat("Z##value", &this->position.z, -50.f, 50.f);
     }
-    for (int k = 0; k < this->models.Size(); ++k) {
-        for (int i = 0; i < this->models[k].numMaterials; i++) {
-            this->strBuilder.Format(32, "Material %d", i);
-            if (ImGui::CollapsingHeader(this->strBuilder.AsCStr())) {
-                this->strBuilder.Format(32, "shader##mat%d", i);
-                if (ImGui::Combo(strBuilder.AsCStr(), &this->models[k].materials[i].shaderIndex, this->shaderNames, numShaders)) {
-                    this->models[k].createMaterials();
-                }
-                if ((this->models[k].Lambert == this->models[k].materials[i].shaderIndex) || (this->models[k].Phong == this->models[k].materials[i].shaderIndex)) {
-                    this->strBuilder.Format(32, "diffuse##%d", i);
-                    ImGui::ColorEdit3(this->strBuilder.AsCStr(), &this->models[k].materials[i].diffuse.x);
-                }
-                if (this->models[k].Phong == this->models[k].materials[i].shaderIndex) {
-                    this->strBuilder.Format(32, "specular##%d", i);
-                    ImGui::ColorEdit3(this->strBuilder.AsCStr(), &this->models[k].materials[i].specular.x);
-                    this->strBuilder.Format(32, "power##%d", i);
-                    ImGui::SliderFloat(this->strBuilder.AsCStr(), &this->models[k].materials[i].specPower, 1.0f, 512.0f);
-                }
+    if (ImGui::CollapsingHeader("Model"))
+    {
+        ImGui::SliderFloat("X1##value", &this->model[0][0], -10.f, 10.f);
+        ImGui::SliderFloat("Y1##value", &this->model[0][1], -10.f, 10.f);
+        ImGui::SliderFloat("Z1##value", &this->model[0][2], -10.f, 10.f);
+        ImGui::SliderFloat("W1##value", &this->model[0][3], -10.f, 10.f);
+        ImGui::SliderFloat("X1##value", &this->model[1][0], -10.f, 10.f);
+        ImGui::SliderFloat("Y1##value", &this->model[1][1], -10.f, 10.f);
+        ImGui::SliderFloat("Z1##value", &this->model[1][2], -10.f, 10.f);
+        ImGui::SliderFloat("W1##value", &this->model[1][3], -10.f, 10.f);
+        ImGui::SliderFloat("X1##value", &this->model[2][0], -10.f, 10.f);
+        ImGui::SliderFloat("Y1##value", &this->model[2][1], -10.f, 10.f);
+        ImGui::SliderFloat("Z1##value", &this->model[2][2], -10.f, 10.f);
+        ImGui::SliderFloat("W1##value", &this->model[2][3], -10.f, 10.f);
+        ImGui::SliderFloat("X1##value", &this->model[3][0], -10.f, 10.f);
+        ImGui::SliderFloat("Y1##value", &this->model[3][1], -10.f, 10.f);
+        ImGui::SliderFloat("Z1##value", &this->model[3][2], -10.f, 10.f);
+        ImGui::SliderFloat("W1##value", &this->model[3][3], -10.f, 10.f);
+    }
+    for (int i = 0; i < this->numMaterials; i++) {
+        this->strBuilder.Format(32, "Material %d", i);
+        if (ImGui::CollapsingHeader(this->strBuilder.AsCStr())) {
+            this->strBuilder.Format(32, "shader##mat%d", i);
+            if (ImGui::Combo(strBuilder.AsCStr(), &this->materials[i].shaderIndex, this->shaderNames, numShaders)) {
+                this->createMaterials();
+            }
+            if ((Lambert == this->materials[i].shaderIndex) || (Phong == this->materials[i].shaderIndex)) {
+                this->strBuilder.Format(32, "diffuse##%d", i);
+                ImGui::ColorEdit3(this->strBuilder.AsCStr(), &this->materials[i].diffuse.x);
+            }
+            if (Phong == this->materials[i].shaderIndex) {
+                this->strBuilder.Format(32, "specular##%d", i);
+                ImGui::ColorEdit3(this->strBuilder.AsCStr(), &this->materials[i].specular.x);
+                this->strBuilder.Format(32, "power##%d", i);
+                ImGui::SliderFloat(this->strBuilder.AsCStr(), &this->materials[i].specPower, 1.0f, 512.0f);
             }
         }
     }
@@ -553,113 +387,99 @@ MeshViewerApp::drawUI() {
     ImGui::End();
 }
 
-///-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
 void
-MeshViewerApp::loadMesh(const char* path) {
-    for (int i = 0; i < 3; ++i)
-    {
-        this->models.Add(Model());
-        this->models.Back().setup(i, path);
+MeshViewerApp::createMaterials() {
+    o_assert_dbg(this->mesh.IsValid());
+    if (this->curMaterialLabel.IsValid()) {
+        Gfx::DestroyResources(this->curMaterialLabel);
     }
+
+    this->curMaterialLabel = Gfx::PushResourceLabel();
+    for (int i = 0; i < this->numMaterials; i++) {
+        auto ps = PipelineSetup::FromLayoutAndShader(this->curMeshSetup.Layout, this->shaders[this->materials[i].shaderIndex]);
+        ps.DepthStencilState.DepthWriteEnabled = true;
+        ps.DepthStencilState.DepthCmpFunc = CompareFunc::LessEqual;
+        ps.RasterizerState.CullFaceEnabled = true;
+        ps.RasterizerState.SampleCount = 4;
+        this->materials[i].pipeline = Gfx::CreateResource(ps);
+    }
+    Gfx::PopResourceLabel();
 }
 
-///-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+void
+MeshViewerApp::loadMesh(const char* path) {
 
-///-----------------------------------------------------------------------------
+    // unload current mesh
+    if (this->curMeshLabel.IsValid()) {
+        Gfx::DestroyResources(this->curMeshLabel);
+        this->curMeshSetup = MeshSetup();
+    }
 
-//void
-//MeshViewerApp::applyVariables(int matIndex) {
-//    switch (this->materials[matIndex].shaderIndex) {
-//        case Normals:
-//            // Normals shader
-//        {
-//            NormalsShader::vsParams vsParams;
-//            vsParams.mvp = this->modelViewProj;
-//            Gfx::ApplyUniformBlock(vsParams);
-//        }
-//            break;
-//        case Lambert:
-//            // Lambert shader
-//        {
-//            LambertShader::vsParams vsParams;
-//            vsParams.mvp = this->modelViewProj;
-//            vsParams.model = this->model;
-//            Gfx::ApplyUniformBlock(vsParams);
-//
-//            LambertShader::fsParams fsParams;
-//            fsParams.lightColor = this->light->lightColor * this->light->lightIntensity;
-//            fsParams.lightDir = this->light->lightDir;
-//            fsParams.matDiffuse = this->materials[matIndex].diffuse;
-//            fsParams.gammaCorrect = this->gammaCorrect ? 1.0f : 0.0f;
-//            Gfx::ApplyUniformBlock(fsParams);
-//        }
-//            break;
-//        case Phong:
-//            // Phong shader
-//        {
-//            PhongShader::vsParams vsParams;
-//            vsParams.mvp = this->modelViewProj;
-//            vsParams.model = this->model;
-//            Gfx::ApplyUniformBlock(vsParams);
-//
-//            PhongShader::fsParams fsParams;
-//            fsParams.eyePos = this->eyePos;
-//            fsParams.lightColor = this->light->lightColor * this->light->lightIntensity;
-//            fsParams.lightDir = this->light->lightDir;
-//            fsParams.matDiffuse = this->materials[matIndex].diffuse;
-//            fsParams.matSpecular = this->materials[matIndex].specular;
-//            fsParams.matSpecularPower = this->materials[matIndex].specPower;
-//            fsParams.gammaCorrect = this->gammaCorrect ? 1.0f : 0.0f;
-//            Gfx::ApplyUniformBlock(fsParams);
-//        }
-//            break;
-//
-//        default:
-//            o_error("Unknown shader index, FIXME!");
-//            break;
-//    }
-//}
+    // load new mesh, use 'onloaded' callback to capture the mesh setup
+    // object of the loaded mesh
+    this->numMaterials = 0;
+    this->curMeshLabel = Gfx::PushResourceLabel();
+    this->mesh = Gfx::LoadResource(MeshLoader::Create(MeshSetup::FromFile(path), [this](MeshSetup& setup) {
+        this->curMeshSetup = setup;
+        this->numMaterials = setup.NumPrimitiveGroups();
+        this->createMaterials();
+    }));
+    Gfx::PopResourceLabel();
+}
 
-///-----------------------------------------------------------------------------
-///-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+void
+MeshViewerApp::applyVariables(int matIndex) {
+    switch (this->materials[matIndex].shaderIndex) {
+        case Normals:
+            // Normals shader
+            {
+                NormalsShader::vsParams vsParams;
+                vsParams.mvp = this->modelViewProj;
+                Gfx::ApplyUniformBlock(vsParams);
+            }
+            break;
+        case Lambert:
+            // Lambert shader
+            {
+                LambertShader::vsParams vsParams;
+                vsParams.mvp = this->modelViewProj;
+                vsParams.model = this->model;
+                Gfx::ApplyUniformBlock(vsParams);
 
-//int
-//MeshViewerApp::createObject(glm::mat4 transform)
-//{
-//    Model model = this->models.Add(Model());
-//    model.transform = transform;
-//
-//    model.drawState.Mesh[0] = Gfx::LoadResource(MeshLoader::Create(MeshSetup::FromFile(this->meshPaths[this->curMeshIndex]),[&model](MeshSetup& setup) {
-//        auto ps = PipelineSetup::FromLayoutAndShader(setup.Layout, Gfx::CreateResource(PhongShader::Setup()));
-//        ps.DepthStencilState.DepthWriteEnabled = true;
-//        ps.DepthStencilState.DepthCmpFunc = CompareFunc::LessEqual;
-//        ps.RasterizerState.CullFaceEnabled = true;
-//        ps.RasterizerState.SampleCount = 4;
-//        model.numMaterials = setup.NumPrimitiveGroups();
-//        model.drawState.Pipeline = Gfx::CreateResource(ps);
-//    } ));
-//    return this->models.Size() - 1;
-//}
-//{
-//	ModelContainer temp = MeshViewerApp::models.Add(model);
-//	temp.transform = transform;
-//
-//	model.drawState.Mesh[0] = Gfx::LoadResource(MeshLoader::Create(MeshSetup::FromFile(temp.path), [&temp](MeshSetup& setup) {
-//
-//		auto ps = PipelineSetup::FromLayoutAndShader(setup.Layout, Gfx::CreateResource(PhongShader::Setup()));
-//		ps.DepthStencilState.DepthWriteEnabled = true;
-//		ps.DepthStencilState.DepthCmpFunc = CompareFunc::LessEqual;
-//		ps.RasterizerState.CullFaceEnabled = true;
-//		ps.RasterizerState.SampleCount = 4;
-//		temp.numMaterials = setup.NumPrimitiveGroups();
-//		temp.drawState.Pipeline = Gfx::CreateResource(ps);
-//
-//	}));
-//	//Gfx::PopResourceLabel();
-//	return MeshViewerApp::models.Size() - 1;
-//}
-//
-//void
-//MeshViewerApp::setPosition(int index, glm::vec3 newPosition) {
-//	MeshViewerApp::models[index].transform = glm::translate(glm::mat4(), newPosition);
-//}
+                LambertShader::fsParams fsParams;
+                fsParams.lightColor = this->lightColor * this->lightIntensity;
+                fsParams.lightDir = this->lightDir;
+                fsParams.matDiffuse = this->materials[matIndex].diffuse;
+                fsParams.gammaCorrect = this->gammaCorrect ? 1.0f : 0.0f;
+                Gfx::ApplyUniformBlock(fsParams);
+            }
+            break;
+        case Phong:
+            // Phong shader
+            {
+                PhongShader::vsParams vsParams;
+                vsParams.mvp = this->modelViewProj;
+                vsParams.pos = this->position;
+                vsParams.model = this->model;
+                Gfx::ApplyUniformBlock(vsParams);
+
+                PhongShader::fsParams fsParams;
+                fsParams.eyePos = this->eyePos;
+                fsParams.lightColor = this->lightColor * this->lightIntensity;
+                fsParams.lightDir = this->lightDir;
+                fsParams.matDiffuse = this->materials[matIndex].diffuse;
+                fsParams.matSpecular = this->materials[matIndex].specular;
+                fsParams.matSpecularPower = this->materials[matIndex].specPower;
+                fsParams.gammaCorrect = this->gammaCorrect ? 1.0f : 0.0f;
+                Gfx::ApplyUniformBlock(fsParams);
+            }
+            break;
+            
+        default:
+            o_error("Unknown shader index, FIXME!");
+            break;
+    }
+}
