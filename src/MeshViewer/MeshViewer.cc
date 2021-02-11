@@ -15,7 +15,12 @@
 #include "glm/gtx/polar_coordinates.hpp"
 #include "shaders.h"
 
+#include <pybind11/pybind11.h>
+#include <pybind11/embed.h>
+#include <Python.h>
+
 using namespace Oryol;
+namespace py = pybind11;
 struct Model {
     int meshIndex;
     glm::mat4 transform;
@@ -45,6 +50,7 @@ class MeshViewerApp : public App {
 public:
     AppState::Code OnInit()
     {
+        py::initialize_interpreter();
 
         // setup IO system
         IOSetup ioSetup;
@@ -103,9 +109,7 @@ public:
 
         this->makeDrawStates();
 
-        this->createModel(0, glm::vec3(0, 0, 0));
-        this->createModel(0, glm::vec3(4, 0, 0));
-        this->createModel(0, glm::vec3(-4, 0, 0));
+        //this->createModel(0, glm::vec3(0, 0, 0));
         this->activeModel = 0;
 
         // setup projection and view matrices
@@ -117,6 +121,26 @@ public:
         // teapot:
         this->cameraSettings[2].dist = 0.8f;
         this->cameraSettings[2].height = 0.0f;
+
+        try
+        {
+            py::exec(R"(
+                from example import *
+                import random
+
+                tiger1      = createModel(0, vec3(0,0,0))
+                opelblitz   = createModel(1, vec3(4,0,0))
+                tiger2      = createModel(0, vec3(-4,0,0))
+                teapot      = createModel(2, vec3(0,5,0))
+
+                setPosition(tiger2,      vec3(random.uniform(-5,5), random.uniform(-5,5), random.uniform(-5,5)))
+                setPosition(opelblitz,   vec3(random.uniform(-5,5), random.uniform(-5,5), random.uniform(-5,5)))
+            )");
+        }
+        catch (std::exception e)
+        {
+            fprintf(stderr, "%s\n", e.what());
+        }
 
         return App::OnInit();
     }
@@ -130,6 +154,7 @@ public:
         Gfx::BeginPass();
         this->drawUI();
         DrawState drawState;
+        int size = MeshViewerApp::modelArray.Size();
         for (int i = 0; i < MeshViewerApp::modelArray.Size(); i++)
         {
             Model& m = MeshViewerApp::modelArray[i];
@@ -171,7 +196,7 @@ public:
         m.transform = glm::translate(glm::mat4(), position);
         m.meshIndex = index;
 
-        return MeshViewerApp::modelArray.Size() - 1;
+        return MeshViewerApp::modelArray.Size()-1;
     }
     static void setPosition(int index, glm::vec3 position)
     {
@@ -523,6 +548,19 @@ Array<Mesh> MeshViewerApp::meshArray;
 Array<DrawState> MeshViewerApp::drawStates;
 
 OryolMain(MeshViewerApp);
+
+PYBIND11_EMBEDDED_MODULE(example, m)
+{
+    m.doc() = "pybind11 example plugin";
+
+    py::class_<glm::vec3>(m, "vec3")
+        .def(py::init<float, float, float>());
+    py::class_<glm::vec4>(m, "vec4")
+        .def(py::init<float, float, float, float>());
+
+    m.def("createModel", &MeshViewerApp::createModel, py::return_value_policy::reference);
+    m.def("setPosition", &MeshViewerApp::setPosition);
+}
 
 const char* MeshViewerApp::meshNames[numMeshes] = {
     "Tiger",
