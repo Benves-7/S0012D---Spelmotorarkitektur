@@ -26,10 +26,9 @@
 #include <string.h>
 
 #include "GraphicsManager.h"
-#include "BaseComponent.h"
 #include "GameEntityManager.h"
-#include "Message.h"
-
+#include "GraphicsComponent.h"
+#include "TransformComponent.h"
 
 using namespace Oryol;
 namespace py = pybind11;
@@ -119,7 +118,7 @@ public:
         this->shaders[Phong]   = Gfx::CreateResource(PhongShader::Setup());
 
 
-        this->makeDrawStates();
+        //this->makeDrawStates();
 
         //this->createModel(0, glm::vec3(0, 0, 0));
         this->activeModel = 0;
@@ -134,8 +133,13 @@ public:
         this->cameraSettings[2].dist = 0.8f;
         this->cameraSettings[2].height = 0.0f;
 
+        EntityManager em = EntityManager();
+
         gm = GraphicsManager();
         gm.loadResources();
+
+        Ptr<GameEntity> entity = GameEntity::Create();
+        entity->addComponent(GraphicsComponent::Create(entity, gm.getGraphicsObjectArray()[0]));
 
 
         try

@@ -1,4 +1,6 @@
 #pragma once
+#include "Message.h"
+#include "BaseComponent.h"
 
 union variable
 {
@@ -11,6 +13,7 @@ union variable
 
 class GameEntity : public RefCounted
 {
+	OryolClassDecl(GameEntity);
 public:
 	GameEntity()
 	{

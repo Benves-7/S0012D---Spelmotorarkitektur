@@ -1,8 +1,9 @@
 #pragma once
-
+#include "Message.h"
 
 class BaseComponent : public RefCounted
 {
+	OryolBaseClassDecl(BaseComponent);
 public:
 	virtual void init()
 	{
