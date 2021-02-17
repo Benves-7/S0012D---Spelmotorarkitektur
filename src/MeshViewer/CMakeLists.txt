@@ -4,6 +4,9 @@ fips_begin_app(MeshViewer windowed)
 	MeshViewer.cc
 	config.json
 	GraphicsManager.h
+	BaseComponent.h
+	GameEntity.h
+	GameEntityManager.h
 	)
     oryol_shader(shaders.shd)
     fips_deps(Gfx Assets LocalFS Input IMUI ${PYTHON_LIBRARIES} cjson)

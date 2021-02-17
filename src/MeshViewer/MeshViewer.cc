@@ -26,6 +26,8 @@
 #include <string.h>
 
 #include "GraphicsManager.h"
+#include "BaseComponent.h"
+#include "GameEntityManager.h"
 
 
 using namespace Oryol;
