@@ -1,6 +1,10 @@
 ///-----------------------------------------------------------------------------
 ///  MeshViewer.cc
 ///-----------------------------------------------------------------------------
+/// 
+/// C:\Users\benja\AppData\Local\Programs\Python\Python39\libs
+
+
 #include "Pre.h"
 #include "Core/Main.h"
 #include "Core/String/StringBuilder.h"
@@ -18,6 +22,11 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/embed.h>
 #include <Python.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "GraphicsManager.h"
+
 
 using namespace Oryol;
 namespace py = pybind11;
@@ -122,6 +131,10 @@ public:
         this->cameraSettings[2].dist = 0.8f;
         this->cameraSettings[2].height = 0.0f;
 
+        gm = GraphicsManager();
+        gm.loadResources();
+
+
         try
         {
             py::exec(R"(
@@ -204,7 +217,7 @@ public:
     }
     static Array<Model> modelArray;
     static Array<Mesh> meshArray;
-    static Array<DrawState> drawStates;                                     // TODO: CHANGE TO MESH TO TRACK NUM OF MATERIALS THEN INTEGRATE IN MAKE DRAWSTATES.
+    GraphicsManager gm;
 
 private:
     void handleInput()
@@ -545,7 +558,6 @@ private:
 
 Array<Model> MeshViewerApp::modelArray;
 Array<Mesh> MeshViewerApp::meshArray;
-Array<DrawState> MeshViewerApp::drawStates;
 
 OryolMain(MeshViewerApp);
 
