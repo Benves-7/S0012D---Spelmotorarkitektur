@@ -28,6 +28,7 @@
 #include "GraphicsManager.h"
 #include "BaseComponent.h"
 #include "GameEntityManager.h"
+#include "Message.h"
 
 
 using namespace Oryol;

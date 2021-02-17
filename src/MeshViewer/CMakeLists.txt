@@ -7,6 +7,9 @@ fips_begin_app(MeshViewer windowed)
 	BaseComponent.h
 	GameEntity.h
 	GameEntityManager.h
+	Message.h
+	TransformComponent.h
+	GraphicsComponent.h
 	)
     oryol_shader(shaders.shd)
     fips_deps(Gfx Assets LocalFS Input IMUI ${PYTHON_LIBRARIES} cjson)

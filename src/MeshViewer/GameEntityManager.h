@@ -26,5 +26,12 @@ public:
 			gameEntities[i]->shutdown();
 		}
 	}
+	bool sendMessage(int index, Message message)
+	{
+		if (gameEntities[index])
+		{
+			gameEntities[index]->send(message);
+		}
+	}
 	static Array<Ptr<GameEntity>> gameEntities;
 };
