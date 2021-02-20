@@ -4,7 +4,10 @@
 class EntityManager
 {
 public:
-	EntityManager();
+	EntityManager()
+	{
+
+	}
 	void init()
 	{
 		for (int i = 0; i < gameEntities.Size(); i++)
@@ -35,3 +38,4 @@ public:
 	}
 	static Array<Ptr<GameEntity>> gameEntities;
 };
+Array<Ptr<GameEntity>> EntityManager::gameEntities;
