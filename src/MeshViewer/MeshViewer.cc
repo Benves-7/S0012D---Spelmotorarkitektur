@@ -138,10 +138,20 @@ public:
         gm = GraphicsManager();
         gm.loadResources();
 
-        Ptr<GameEntity> entity = GameEntity::Create();
-        entity->addComponent(GraphicsComponent::Create(entity, gm.getGraphicsObjectArray()[0]));
-        entity->addComponent(TransformComponent::Create(entity, translate(mat4(), vec3(0, 0, 0))));
-        EntityManager::gameEntities.Add(entity);
+        Ptr<GameEntity> entity1 = GameEntity::Create();
+        entity1->addComponent(GraphicsComponent::Create(entity1, gm.getGraphicsObjectArray()[0]));
+        entity1->addComponent(TransformComponent::Create(entity1, translate(mat4(), vec3(0, 0, 0))));
+        EntityManager::gameEntities.Add(entity1);
+
+        Ptr<GameEntity> entity2 = GameEntity::Create();
+        entity2->addComponent(GraphicsComponent::Create(entity2, gm.getGraphicsObjectArray()[1]));
+        entity2->addComponent(TransformComponent::Create(entity2, translate(mat4(), vec3(4, 0, 0))));
+        EntityManager::gameEntities.Add(entity2);
+
+        Ptr<GameEntity> entity3 = GameEntity::Create();
+        entity3->addComponent(GraphicsComponent::Create(entity3, gm.getGraphicsObjectArray()[2]));
+        entity3->addComponent(TransformComponent::Create(entity3, translate(mat4(), vec3(-4, 0, 0))));
+        EntityManager::gameEntities.Add(entity3);
 
         em.init();
 
@@ -155,12 +165,12 @@ public:
         this->updateLight();
 
         Gfx::BeginPass();
-        //this->drawUI();
+        this->drawUI();
         DrawState drawState;
-        int size = MeshViewerApp::modelArray.Size();
         for (int i = 0; i < EntityManager::gameEntities.Size(); i++)
         {
-            auto ds = gm.getGraphicsObjectArray()[*EntityManager::gameEntities[i]->get("meshIndex").i];
+            auto temp = *EntityManager::gameEntities[i]->get("meshIndex").i;
+            auto ds = gm.getGraphicsObjectArray()[temp];
             if (ds.drawState.Pipeline.IsValid())
             {
                 Gfx::ApplyDrawState(ds.drawState);
@@ -175,7 +185,7 @@ public:
                 Gfx::Draw(j);
             }
         }
-        //ImGui::Render();
+        ImGui::Render();
         Gfx::EndPass();
         Gfx::CommitFrame();
         return Gfx::QuitRequested() ? AppState::Cleanup : AppState::Running;
@@ -267,35 +277,41 @@ private:
     }
     void drawUI()
     {
-        const char* state;
-        switch (Gfx::QueryResourceInfo(this->meshArray[this->modelArray[this->activeModel].meshIndex].drawState.Mesh[0]).State) {
-        case ResourceState::Valid: state = "Loaded"; break;
-        case ResourceState::Failed: state = "Load Failed"; break;
-        case ResourceState::Pending: state = "Loading..."; break;
-        default: state = "Invalid"; break;
+        Array<string> states;
+        for (int i = 0; i < gm.getGraphicsObjectArray().Size(); i++)
+        {
+            switch (Gfx::QueryResourceInfo(gm.getGraphicsObjectArray()[i].drawState.Mesh[0]).State)
+            {
+            case ResourceState::Valid: states.Add("Loaded"); break;
+            case ResourceState::Failed: states.Add("Load Failed"); break;
+            case ResourceState::Pending: states.Add("Loading..."); break;
+            default: states.Add("Invalid"); break;
+            }
         }
 
         IMUI::NewFrame();
         ImGui::SetNextWindowSize(ImVec2(240, 300));
         ImGui::SetNextWindowBgAlpha(0.25f);
-        ImGui::Begin("Mesh Viewer", nullptr, 0);
+        ImGui::Begin("Mesh Viewer (Tester)", nullptr, 0);
         ImGui::PushItemWidth(130.0f);
 
-        ImGui::RadioButton("M 1", &this->activeModel, 0); ImGui::SameLine();
-        ImGui::RadioButton("M 2", &this->activeModel, 1); ImGui::SameLine();
-        ImGui::RadioButton("M 3", &this->activeModel, 2);
-
-        if (ImGui::Combo("##mesh", (int*)&this->modelArray[this->activeModel].meshIndex, this->meshNames, numMeshes)) {
-            this->modelArray[this->activeModel].drawState = this->meshArray[this->modelArray[this->activeModel].meshIndex].drawState;
-            this->modelArray[this->activeModel].numberOfMaterials = this->meshArray[this->modelArray[this->activeModel].meshIndex].numberOfMaterials;
+        for (int i = 0; i < gm.getGraphicsObjectArray().Size(); i++)
+        {
+            auto s = "model %i: " + states[i];
+            ImGui::Text(s.c_str(), i);
         }
-        ImGui::Text("state: %s\n", state);
-        if (this->curMeshSetup.NumPrimitiveGroups() > 0) {
-            ImGui::Text("primitive groups:\n");
-            for (int i = 0; i < this->curMeshSetup.NumPrimitiveGroups(); i++) {
-                ImGui::Text("%d: %d triangles\n", i, this->curMeshSetup.PrimitiveGroup(i).NumElements / 3);
+
+        for (int i = 0; i < EntityManager::gameEntities.Size(); i++)
+        {
+            string num = 'M' + to_string(i+1);
+            ImGui::RadioButton(num.c_str(), &this->activeModel, i);
+            if (i != EntityManager::gameEntities.Size()-1)
+            {
+                ImGui::SameLine();
             }
         }
+        variable& v = EntityManager::gameEntities[this->activeModel]->get("meshIndex");
+        ImGui::Combo("##mesh", &*v.i, this->meshNames, numMeshes);
         if (ImGui::CollapsingHeader("Camera")) {
             ImGui::SliderFloat("Dist##cam", &this->camera.dist, minCamDist, maxCamDist);
             ImGui::SliderFloat("Height##cam", &this->camera.height, minCamHeight, maxCamHeight);
@@ -323,25 +339,25 @@ private:
                 this->lightAutoOrbit = false;
             }
         }
-        for (int i = 0; i < this->modelArray[this->activeModel].numberOfMaterials; i++) {
-            this->strBuilder.Format(32, "Material %d", i);
-            if (ImGui::CollapsingHeader(this->strBuilder.AsCStr())) {
-                this->strBuilder.Format(32, "shader##mat%d", i);
-                if (ImGui::Combo(strBuilder.AsCStr(), &this->modelArray[this->activeModel].materials[i].shaderIndex, this->shaderNames, numShaders)) {
-                    this->createMaterials();
-                }
-                if ((Lambert == this->modelArray[this->activeModel].materials[i].shaderIndex) || (Phong == this->modelArray[this->activeModel].materials[i].shaderIndex)) {
-                    this->strBuilder.Format(32, "diffuse##%d", i);
-                    ImGui::ColorEdit3(this->strBuilder.AsCStr(), &this->modelArray[this->activeModel].materials[i].diffuse.x);
-                }
-                if (Phong == this->modelArray[this->activeModel].materials[i].shaderIndex) {
-                    this->strBuilder.Format(32, "specular##%d", i);
-                    ImGui::ColorEdit3(this->strBuilder.AsCStr(), &this->modelArray[this->activeModel].materials[i].specular.x);
-                    this->strBuilder.Format(32, "power##%d", i);
-                    ImGui::SliderFloat(this->strBuilder.AsCStr(), &this->modelArray[this->activeModel].materials[i].specPower, 1.0f, 512.0f);
-                }
-            }
-        }
+        //for (int i = 0; i < this->modelArray[this->activeModel].numberOfMaterials; i++) {
+        //    this->strBuilder.Format(32, "Material %d", i);
+        //    if (ImGui::CollapsingHeader(this->strBuilder.AsCStr())) {
+        //        this->strBuilder.Format(32, "shader##mat%d", i);
+        //        if (ImGui::Combo(strBuilder.AsCStr(), &this->modelArray[this->activeModel].materials[i].shaderIndex, this->shaderNames, numShaders)) {
+        //            this->createMaterials();
+        //        }
+        //        if ((Lambert == this->modelArray[this->activeModel].materials[i].shaderIndex) || (Phong == this->modelArray[this->activeModel].materials[i].shaderIndex)) {
+        //            this->strBuilder.Format(32, "diffuse##%d", i);
+        //            ImGui::ColorEdit3(this->strBuilder.AsCStr(), &this->modelArray[this->activeModel].materials[i].diffuse.x);
+        //        }
+        //        if (Phong == this->modelArray[this->activeModel].materials[i].shaderIndex) {
+        //            this->strBuilder.Format(32, "specular##%d", i);
+        //            ImGui::ColorEdit3(this->strBuilder.AsCStr(), &this->modelArray[this->activeModel].materials[i].specular.x);
+        //            this->strBuilder.Format(32, "power##%d", i);
+        //            ImGui::SliderFloat(this->strBuilder.AsCStr(), &this->modelArray[this->activeModel].materials[i].specPower, 1.0f, 512.0f);
+        //        }
+        //    }
+        //}
         ImGui::PopItemWidth();
         ImGui::End();
     }
