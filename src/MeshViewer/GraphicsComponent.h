@@ -26,9 +26,9 @@ public:
 		diff.vec4 = &object.material.diffuse;
 		this->gameEntity->registerVariable("diffuse", diff);
 
-		variable meshIndex; 
-		meshIndex.i = &object.index;
-		this->gameEntity->registerVariable("meshIndex", meshIndex);
+		variable index; 
+		index.i = &object.index;
+		this->gameEntity->registerVariable("meshIndex", index);
 	}
 
 	graphicsObject object;
