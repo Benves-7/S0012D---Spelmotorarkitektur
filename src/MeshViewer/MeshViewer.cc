@@ -140,27 +140,10 @@ public:
 
         Ptr<GameEntity> entity = GameEntity::Create();
         entity->addComponent(GraphicsComponent::Create(entity, gm.getGraphicsObjectArray()[0]));
+        entity->addComponent(TransformComponent::Create(entity, translate(mat4(), vec3(0, 0, 0))));
+        EntityManager::gameEntities.Add(entity);
 
-
-        try
-        {
-            py::exec(R"(
-                from example import *
-                import random
-
-                tiger1      = createModel(0, vec3(0,0,0))
-                opelblitz   = createModel(1, vec3(4,0,0))
-                tiger2      = createModel(0, vec3(-4,0,0))
-                teapot      = createModel(2, vec3(0,5,0))
-
-                setPosition(tiger2,      vec3(random.uniform(-5,5), random.uniform(-5,5), random.uniform(-5,5)))
-                setPosition(opelblitz,   vec3(random.uniform(-5,5), random.uniform(-5,5), random.uniform(-5,5)))
-            )");
-        }
-        catch (std::exception e)
-        {
-            fprintf(stderr, "%s\n", e.what());
-        }
+        em.init();
 
         return App::OnInit();
     }
@@ -172,31 +155,27 @@ public:
         this->updateLight();
 
         Gfx::BeginPass();
-        this->drawUI();
+        //this->drawUI();
         DrawState drawState;
         int size = MeshViewerApp::modelArray.Size();
-        for (int i = 0; i < MeshViewerApp::modelArray.Size(); i++)
+        for (int i = 0; i < EntityManager::gameEntities.Size(); i++)
         {
-            Model& m = MeshViewerApp::modelArray[i];
-            drawState.Mesh[0] = m.mesh;
-            if (!m.drawState.Pipeline.IsValid())
+            auto ds = gm.getGraphicsObjectArray()[*EntityManager::gameEntities[i]->get("meshIndex").i];
+            if (ds.drawState.Pipeline.IsValid())
             {
-                this->reAssign(m);   
+                Gfx::ApplyDrawState(ds.drawState);
             }
             else
             {
-                Gfx::ApplyDrawState(m.drawState);
+                gm.generateNewDrawState(ds);
             }
-            for (int j = 0; j < 3; j++)
-            {
-                this->applyVariables(i, j);
-            }
+            this->applyVariables(i);
             for (int j = 0; j < 3; j++)
             {
                 Gfx::Draw(j);
             }
         }
-        ImGui::Render();
+        //ImGui::Render();
         Gfx::EndPass();
         Gfx::CommitFrame();
         return Gfx::QuitRequested() ? AppState::Cleanup : AppState::Running;
@@ -407,59 +386,23 @@ private:
     //    Gfx::PopResourceLabel();
     //}
 
-    void applyVariables(int modelIndex, int materialIndex)
+    void applyVariables(int modelIndex)
     {
-        Model model = MeshViewerApp::modelArray[modelIndex];
+        PhongShader::vsParams vsParams;
+        vsParams.mvp = this->modelViewProj * *EntityManager::gameEntities[modelIndex]->get("transform").mat4;
+        vsParams.model = *EntityManager::gameEntities[modelIndex]->get("transform").mat4;
+        Gfx::ApplyUniformBlock(vsParams);
 
-        switch (model.materials[modelIndex].shaderIndex) {
-        case Normals:
-            // Normals shader
-        {
-            NormalsShader::vsParams vsParams;
-            vsParams.mvp = this->modelViewProj * model.transform;
-            Gfx::ApplyUniformBlock(vsParams);
-        }
-        break;
-        case Lambert:
-            // Lambert shader
-        {
-            LambertShader::vsParams vsParams;
-            vsParams.mvp = this->modelViewProj * model.transform;
-            vsParams.model = this->model * model.transform;
-            Gfx::ApplyUniformBlock(vsParams);
-
-            LambertShader::fsParams fsParams;
-            fsParams.lightColor = this->lightColor * this->lightIntensity;
-            fsParams.lightDir = this->lightDir;
-            fsParams.matDiffuse = model.materials[modelIndex].diffuse;
-            fsParams.gammaCorrect = this->gammaCorrect ? 1.0f : 0.0f;
-            Gfx::ApplyUniformBlock(fsParams);
-        }
-        break;
-        case Phong:
-            // Phong shader
-        {
-            PhongShader::vsParams vsParams;
-            vsParams.mvp = this->modelViewProj * model.transform;
-            vsParams.model = this->model * model.transform;
-            Gfx::ApplyUniformBlock(vsParams);
-
-            PhongShader::fsParams fsParams;
-            fsParams.eyePos = this->eyePos;
-            fsParams.lightColor = this->lightColor * this->lightIntensity;
-            fsParams.lightDir = this->lightDir;
-            fsParams.matDiffuse = model.materials[modelIndex].diffuse;
-            fsParams.matSpecular = model.materials[modelIndex].specular;
-            fsParams.matSpecularPower = model.materials[modelIndex].specPower;
-            fsParams.gammaCorrect = this->gammaCorrect ? 1.0f : 0.0f;
-            Gfx::ApplyUniformBlock(fsParams);
-        }
-        break;
-
-        default:
-            o_error("Unknown shader index, FIXME!");
-            break;
-        }
+        PhongShader::fsParams fsParams;
+        fsParams.eyePos = this->eyePos;
+        fsParams.lightColor = this->lightColor * this->lightIntensity;
+        fsParams.lightDir = this->lightDir;
+        fsParams.matDiffuse = *EntityManager::gameEntities[modelIndex]->get("diffuse").vec4;
+        vec4 temp = *EntityManager::gameEntities[modelIndex]->get("specular").vec4;
+        fsParams.matSpecular = *EntityManager::gameEntities[modelIndex]->get("specular").vec4;
+        fsParams.matSpecularPower = *EntityManager::gameEntities[modelIndex]->get("specPower").f;
+        fsParams.gammaCorrect = this->gammaCorrect ? 1.0f : 0.0f;
+        Gfx::ApplyUniformBlock(fsParams);
     }
 
     static void makeDrawStates()
