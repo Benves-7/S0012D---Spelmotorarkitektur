@@ -54,7 +54,7 @@ public:
 
 	// variables.
 	// return the variable.
-	variable get(StringAtom key)
+	variable& get(StringAtom key)
 	{
 		return variables[key];
 	}
