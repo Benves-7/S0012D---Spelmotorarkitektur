@@ -74,9 +74,9 @@ public:
 	{
 		return graphicsObjectArray;
 	}
-	void generateNewDrawState(graphicsObject& object, char* path)
+	void generateNewDrawState(graphicsObject& object)
 	{
-		object.drawState.Mesh[0] = Gfx::LoadResource(MeshLoader::Create(MeshSetup::FromFile(path),
+		object.drawState.Mesh[0] = Gfx::LoadResource(MeshLoader::Create(MeshSetup::FromFile(object.path),
 			[&object](MeshSetup& setup) {
 				auto ps = PipelineSetup::FromLayoutAndShader(setup.Layout, Gfx::CreateResource(PhongShader::Setup()));
 				ps.DepthStencilState.DepthWriteEnabled = true;
