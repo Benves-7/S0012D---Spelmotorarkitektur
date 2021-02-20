@@ -16,8 +16,11 @@ public:
 	{
 		variable spec; 
 		spec.vec4 = &object.material.specular;
-		spec.f = &object.material.specPower;
 		this->gameEntity->registerVariable("specular", spec);
+
+		variable specPow;
+		specPow.f = &object.material.specPower;
+		this->gameEntity->registerVariable("specPower", specPow);
 
 		variable diff;
 		diff.vec4 = &object.material.diffuse;
