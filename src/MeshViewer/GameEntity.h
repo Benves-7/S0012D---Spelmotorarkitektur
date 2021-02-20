@@ -73,6 +73,6 @@ public:
 	}
 
 private:
-	static Array<Ptr<BaseComponent>> componentArray;
+	Array<Ptr<BaseComponent>> componentArray;
 	Map<StringAtom, variable> variables;
 };
