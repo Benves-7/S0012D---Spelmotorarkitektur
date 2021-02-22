@@ -19,9 +19,6 @@
 #include "glm/gtx/polar_coordinates.hpp"
 #include "shaders.h"
 
-#include <pybind11/pybind11.h>
-#include <pybind11/embed.h>
-#include <Python.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -31,7 +28,6 @@
 #include "TransformComponent.h"
 
 using namespace Oryol;
-namespace py = pybind11;
 struct Model {
     int meshIndex;
     glm::mat4 transform;
@@ -61,8 +57,6 @@ class MeshViewerApp : public App {
 public:
     AppState::Code OnInit()
     {
-        py::initialize_interpreter();
-
         // setup IO system
         IOSetup ioSetup;
         ioSetup.FileSystems.Add("file", LocalFileSystem::Creator());
@@ -117,10 +111,6 @@ public:
         this->shaders[Lambert] = Gfx::CreateResource(LambertShader::Setup());
         this->shaders[Phong]   = Gfx::CreateResource(PhongShader::Setup());
 
-
-        //this->makeDrawStates();
-
-        //this->createModel(0, glm::vec3(0, 0, 0));
         this->activeModel = 0;
 
         // setup projection and view matrices
@@ -140,17 +130,17 @@ public:
 
         Ptr<GameEntity> entity1 = GameEntity::Create();
         entity1->addComponent(GraphicsComponent::Create(entity1, gm.getGraphicsObjectArray()[0]));
-        entity1->addComponent(TransformComponent::Create(entity1, translate(mat4(), vec3(0, 0, 0))));
+        entity1->addComponent(TransformComponent::Create(entity1, vec3(0, 0, 0)));
         EntityManager::gameEntities.Add(entity1);
 
         Ptr<GameEntity> entity2 = GameEntity::Create();
         entity2->addComponent(GraphicsComponent::Create(entity2, gm.getGraphicsObjectArray()[1]));
-        entity2->addComponent(TransformComponent::Create(entity2, translate(mat4(), vec3(4, 0, 0))));
+        entity2->addComponent(TransformComponent::Create(entity2, vec3(4, 0, 0)));
         EntityManager::gameEntities.Add(entity2);
 
         Ptr<GameEntity> entity3 = GameEntity::Create();
         entity3->addComponent(GraphicsComponent::Create(entity3, gm.getGraphicsObjectArray()[2]));
-        entity3->addComponent(TransformComponent::Create(entity3, translate(mat4(), vec3(-4, 0, 0))));
+        entity3->addComponent(TransformComponent::Create(entity3, vec3(-4, 0, 0)));
         EntityManager::gameEntities.Add(entity3);
 
         em.init();
@@ -295,12 +285,14 @@ private:
         ImGui::Begin("Mesh Viewer (Tester)", nullptr, 0);
         ImGui::PushItemWidth(130.0f);
 
+        // States of mesh loading.
         for (int i = 0; i < gm.getGraphicsObjectArray().Size(); i++)
         {
             auto s = "model %i: " + states[i];
             ImGui::Text(s.c_str(), i);
         }
 
+        // Model selector.
         for (int i = 0; i < EntityManager::gameEntities.Size(); i++)
         {
             string num = 'M' + to_string(i+1);
@@ -310,54 +302,69 @@ private:
                 ImGui::SameLine();
             }
         }
-        variable& v = EntityManager::gameEntities[this->activeModel]->get("meshIndex");
-        ImGui::Combo("##mesh", &*v.i, this->meshNames, numMeshes);
-        if (ImGui::CollapsingHeader("Camera")) {
+        
+        // Mesh selector.
+        ImGui::Combo("##mesh", &*EntityManager::gameEntities[this->activeModel]->get("meshIndex").i, this->meshNames, numMeshes);
+
+        // Camera settings.
+        if (ImGui::CollapsingHeader("Camera")) 
+        {
             ImGui::SliderFloat("Dist##cam", &this->camera.dist, minCamDist, maxCamDist);
             ImGui::SliderFloat("Height##cam", &this->camera.height, minCamHeight, maxCamHeight);
             ImGui::SliderAngle("Long##cam", &this->camera.orbital.y, 0.0f, 360.0f);
             ImGui::SliderAngle("Lat##cam", &this->camera.orbital.x, minLatitude, maxLatitude);
             ImGui::Checkbox("Auto Orbit##cam", &this->camAutoOrbit);
-            if (ImGui::Button("Reset##cam")) {
+            if (ImGui::Button("Reset##cam")) 
+            {
                 this->camera.dist = 8.0f;
                 this->camera.height = 1.0f;
                 this->camera.orbital = glm::vec2(0.0f, 0.0f);
                 this->camAutoOrbit = false;
             }
         }
-        if (ImGui::CollapsingHeader("Light")) {
+
+        // Light settings.
+        if (ImGui::CollapsingHeader("Light")) 
+        {
             ImGui::SliderAngle("Long##light", &this->lightOrbital.y, 0.0f, 360.0f);
             ImGui::SliderAngle("Lat##light", &this->lightOrbital.x, minLatitude, maxLatitude);
             ImGui::ColorEdit3("Color##light", &this->lightColor.x);
             ImGui::SliderFloat("Intensity##light", &this->lightIntensity, 0.0f, 5.0f);
             ImGui::Checkbox("Auto Orbit##light", &this->lightAutoOrbit);
             ImGui::Checkbox("Gamma Correct##light", &this->gammaCorrect);
-            if (ImGui::Button("Reset##light")) {
+            if (ImGui::Button("Reset##light")) 
+            {
                 this->lightOrbital = glm::vec2(glm::radians(25.0f), 0.0f);
                 this->lightColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
                 this->lightIntensity = 1.0f;
                 this->lightAutoOrbit = false;
             }
         }
-        //for (int i = 0; i < this->modelArray[this->activeModel].numberOfMaterials; i++) {
-        //    this->strBuilder.Format(32, "Material %d", i);
-        //    if (ImGui::CollapsingHeader(this->strBuilder.AsCStr())) {
-        //        this->strBuilder.Format(32, "shader##mat%d", i);
-        //        if (ImGui::Combo(strBuilder.AsCStr(), &this->modelArray[this->activeModel].materials[i].shaderIndex, this->shaderNames, numShaders)) {
-        //            this->createMaterials();
-        //        }
-        //        if ((Lambert == this->modelArray[this->activeModel].materials[i].shaderIndex) || (Phong == this->modelArray[this->activeModel].materials[i].shaderIndex)) {
-        //            this->strBuilder.Format(32, "diffuse##%d", i);
-        //            ImGui::ColorEdit3(this->strBuilder.AsCStr(), &this->modelArray[this->activeModel].materials[i].diffuse.x);
-        //        }
-        //        if (Phong == this->modelArray[this->activeModel].materials[i].shaderIndex) {
-        //            this->strBuilder.Format(32, "specular##%d", i);
-        //            ImGui::ColorEdit3(this->strBuilder.AsCStr(), &this->modelArray[this->activeModel].materials[i].specular.x);
-        //            this->strBuilder.Format(32, "power##%d", i);
-        //            ImGui::SliderFloat(this->strBuilder.AsCStr(), &this->modelArray[this->activeModel].materials[i].specPower, 1.0f, 512.0f);
-        //        }
-        //    }
-        //}
+
+        // Material settings.
+        if (ImGui::CollapsingHeader("Material"))
+        {
+            ImGui::ColorEdit3("Diffuse", &EntityManager::gameEntities[this->activeModel]->get("diffuse").vec4->x);
+            ImGui::ColorEdit3("Specular", &EntityManager::gameEntities[this->activeModel]->get("specular").vec4->x);
+            ImGui::SliderFloat("Specular Power", &*EntityManager::gameEntities[this->activeModel]->get("specPower").f, 1.0f, 512.0f);
+        }
+
+        // Position settings.
+        vec4* v = &*EntityManager::gameEntities[this->activeModel]->get("position").vec4;
+        float* f = new float[3];
+        f[0] = v->x; f[1] = v->y; f[2] = v->z;
+        if (ImGui::SliderFloat3("Position", f, -10, 10, "%.1f"))
+        {
+            variable pos;
+            pos.vec4 = new vec4(f[0], f[1], f[2], 1);
+            EntityManager::gameEntities[this->activeModel]->set("position", pos);
+
+            variable transform;
+            mat4 m = translate(mat4(), vec3(f[0], f[1], f[2]));
+            transform.mat4 = new mat4(m);
+            EntityManager::gameEntities[this->activeModel]->set("transform", transform);
+        }
+
         ImGui::PopItemWidth();
         ImGui::End();
     }
@@ -380,27 +387,6 @@ private:
         }
         Gfx::PopResourceLabel();
     }
-
-    //void loadMesh(const char* path)
-    //{
-    //    // unload current mesh
-    //    if (this->curMeshLabel.IsValid())
-    //    {
-    //        Gfx::DestroyResources(this->curMeshLabel);
-    //        this->curMeshSetup = MeshSetup();
-    //    }
-    //    // load new mesh, use 'onloaded' callback to capture the mesh setup
-    //    // object of the loaded mesh
-    //    this->numMaterials = 0;
-    //    this->curMeshLabel = Gfx::PushResourceLabel();
-    //    this->mesh = Gfx::LoadResource(MeshLoader::Create(MeshSetup::FromFile(path), [this](MeshSetup& setup)
-    //        {
-    //            this->curMeshSetup = setup;
-    //            this->numMaterials = setup.NumPrimitiveGroups();
-    //            this->createMaterials();
-    //        }));
-    //    Gfx::PopResourceLabel();
-    //}
 
     void applyVariables(int modelIndex)
     {
@@ -526,19 +512,6 @@ Array<Model> MeshViewerApp::modelArray;
 Array<Mesh> MeshViewerApp::meshArray;
 
 OryolMain(MeshViewerApp);
-
-PYBIND11_EMBEDDED_MODULE(example, m)
-{
-    m.doc() = "pybind11 example plugin";
-
-    py::class_<glm::vec3>(m, "vec3")
-        .def(py::init<float, float, float>());
-    py::class_<glm::vec4>(m, "vec4")
-        .def(py::init<float, float, float, float>());
-
-    m.def("createModel", &MeshViewerApp::createModel, py::return_value_policy::reference);
-    m.def("setPosition", &MeshViewerApp::setPosition);
-}
 
 const char* MeshViewerApp::meshNames[numMeshes] = {
     "Tiger",
